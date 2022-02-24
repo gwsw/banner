@@ -13,7 +13,7 @@ static char const* sc_clear = "\33[H\33[2J";
 static int quit = 0;
 
 static int usage() {
-    throw std::runtime_error("usage");
+    throw std::runtime_error("usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message");
 }
 
 // -----------------------------------------------------------------
@@ -178,9 +178,15 @@ private:
 class Banner {
 public:
     Banner(std::string const& message, Font const& font) : img_(0,0) {
-        build(message, font);
+        for (size_t i = 0; i < message.size(); ++i) {
+            char ch = message[i];
+            CharRect const* ch_img = font.char_image(ch);
+            int redge = img_.width();
+            img_.resize(redge + ch_img->width(), std::max(img_.height(), ch_img->height()));
+            img_.blit(ch_img, 0, 0, redge, 0);
+        }
     }
-    void print(int offset, int sc_width, int sc_height, int xmult, int ymult, void (*putc)(char ch)) const {
+    void print(int offset, int sc_width, int sc_height, void (*putc)(char ch)) const {
         for (char const* p = sc_clear; *p; ++p)
             (*putc)(*p);
         int rows = std::min(img_.height(), sc_height-1);
@@ -189,16 +195,6 @@ public:
                     (*putc)(img_.get_at(col+offset, row));
             }
             (*putc)('\n');
-        }
-    }
-protected:
-    void build(std::string const& message, Font const& font) {
-        for (size_t i = 0; i < message.size(); ++i) {
-            char ch = message[i];
-            CharRect const* ch_img = font.char_image(ch);
-            int redge = img_.width();
-            img_.resize(redge + ch_img->width(), std::max(img_.height(), ch_img->height()));
-            img_.blit(ch_img, 0, 0, redge, 0);
         }
     }
 private:
@@ -213,14 +209,11 @@ public:
         sc_height = atoi(getenv("LINES"));
         delay_ms = -1;
         offset_incr = 1;
-        space = 3;
-        xmult = 1;
-        ymult = 1;
         fill = ' ';
         color = "";
         font_file = "?";
         int ch;
-        while ((ch = getopt(argc, argv, "c:d:f:F:h:i:s:w:x:y:")) != -1) {
+        while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:x:y:")) != -1) {
             switch (ch) {
             case 'c':
                 color = optarg;
@@ -240,17 +233,8 @@ public:
             case 'i':
                 offset_incr = atoi(optarg);
                 break;
-            case 's':
-                space = atoi(optarg);
-                break;
             case 'w':
                 sc_width = atoi(optarg);
-                break;
-            case 'x':
-                xmult = atoi(optarg);
-                break;
-            case 'y':
-                ymult = atoi(optarg);
                 break;
             default:
                 usage();
@@ -268,9 +252,6 @@ public:
     int sc_height;
     int delay_ms;
     int offset_incr;
-    int space;
-    int xmult;
-    int ymult;
     int fill;
     std::string color;
     std::string font_file;
@@ -278,66 +259,67 @@ public:
 };
 
 // -----------------------------------------------------------------
-
-static void putch(char ch) {
-    putchar(ch);
-}
-
-	static int
-parse_color(char ch)
-{
-	switch (ch)
-	{
-	case 'k': return 30;
-	case 'r': return 31;
-	case 'g': return 32;
-	case 'y': return 33;
-	case 'b': return 34;
-	case 'm': return 35;
-	case 'c': return 36;
-	case 'w': return 37;
-	case 'K': return 90;
-	case 'R': return 91;
-	case 'G': return 92;
-	case 'Y': return 93;
-	case 'B': return 94;
-	case 'M': return 95;
-	case 'C': return 96;
-	case 'W': return 97;
-	default:  return 0;
-	}
-}
-
-static void put_color(std::string const& color) {
-    if (color.size() == 0) {
-        printf("\33[m");
-    } else {
-        int color_fg = parse_color(color[0]);
-        int color_bg = (color.size() <= 1) ? -1 : parse_color(color[1]);
-        if (color_fg > 0)
-            printf("\33[%dm", color_fg);
-        if (color_bg > 0)
-            printf("\33[%dm", color_bg+10);
+class Runner {
+public:
+    Runner(Params const& params) : params_(params) {}
+    void put_color(std::string const& color) {
+        if (color.size() == 0) {
+            printf("\33[m");
+        } else {
+            int color_fg = parse_color(color[0]);
+            int color_bg = (color.size() <= 1) ? -1 : parse_color(color[1]);
+            if (color_fg > 0)
+                printf("\33[%dm", color_fg);
+            if (color_bg > 0)
+                printf("\33[%dm", color_bg+10);
+        }
     }
-}
+	int parse_color(char ch) {
+        switch (ch) {
+        case 'k': return 30;
+        case 'r': return 31;
+        case 'g': return 32;
+        case 'y': return 33;
+        case 'b': return 34;
+        case 'm': return 35;
+        case 'c': return 36;
+        case 'w': return 37;
+        case 'K': return 90;
+        case 'R': return 91;
+        case 'G': return 92;
+        case 'Y': return 93;
+        case 'B': return 94;
+        case 'M': return 95;
+        case 'C': return 96;
+        case 'W': return 97;
+        default:  return 0;
+        }
+    }
+    void run() {
+        struct timespec delay_time;
+        if (params_.delay_ms >= 0) {
+            delay_time.tv_sec = params_.delay_ms / 1000;
+            delay_time.tv_nsec = (params_.delay_ms % 1000) * 1000000;
+        }
+        Font font (params_.font_file);
+        Banner banner(params_.message, font);
+        put_color(params_.color);
+        for (int offset = 0; !quit; offset += params_.offset_incr) {
+            banner.print(offset, params_.sc_width, params_.sc_height, putch);
+            if (params_.delay_ms < 0) break;
+            nanosleep(&delay_time, NULL);
+        }
+        put_color("");
+        printf("%s", sc_clear);
+    }
+    static void putch(char ch) {
+        putchar(ch);
+    }
+private:
+    Params const& params_;
+};
 
-static void run_banner(Params const& params) {
-    struct timespec delay_time;
-    if (params.delay_ms >= 0) {
-        delay_time.tv_sec = params.delay_ms / 1000;
-        delay_time.tv_nsec = (params.delay_ms % 1000) * 1000000;
-    }
-    Font font (params.font_file);
-    Banner banner(params.message, font);
-    put_color(params.color);
-    for (int offset = 0; !quit; offset += params.offset_incr) {
-        banner.print(offset, params.sc_width, params.sc_height, params.xmult, params.ymult, putch);
-        if (params.delay_ms < 0) break;
-        nanosleep(&delay_time, NULL);
-    }
-    put_color("");
-    printf("%s", sc_clear);
-}
+// -----------------------------------------------------------------
 
 static void intr(int sig) {
     quit = 1;
@@ -346,6 +328,7 @@ static void intr(int sig) {
 int main(int argc, char** argv) {
     Params params (argc, argv);
     signal(SIGINT, intr);
-    run_banner(params);
+    Runner runner(params);
+    runner.run();
     return 0;
 }
