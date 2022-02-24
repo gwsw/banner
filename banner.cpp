@@ -31,8 +31,8 @@ public:
     char fill() const { return fill_; }
     int kern() const { return kern_; }
     char get_at(int row, int col) const {
-        if (row >= height_ || col >= width_) return fill_;
-        return bytes_[index(row,col)];
+        if (row >= height_ || width_ == 0) return fill_;
+        return bytes_[index(row, col % width_)];
     }
     void set_at(int row, int col, char ch) {
         if (row >= height_ || col >= width_) return;
@@ -52,16 +52,17 @@ printf("clear('%c') %d x %d\n", ch, width_, height_);
         for (int row = 0; row < bh; ++row) {
             for (int col = 0; col < bw; ++col) {
                 char ch = from->get_at(frow+row, fcol+col);
-                if (ch != fill_)
+                if (!transparent || ch != fill_)
                     set_at(trow+row, tcol+col, ch);
             }
         }
     }
     void init(std::list<std::string>& rows) {
         auto it = rows.begin(); 
-        for (int row = 0; row < height_; ++row, ++it) {
+        for (int row = 0; row < height_; ++row) {
             for (int col = 0; col < width_; ++col) {
-                set_at(row, col, (col >= (int) it->size()) ? fill_ : it->at(col));
+                set_at(row, col, (it == rows.end() || col >= (int) it->size()) ? fill_ : it->at(col));
+				if (it != rows.end()) ++it;
             }
         }
     }
@@ -101,11 +102,11 @@ public:
             throw std::exception();
     }
     const CharRect* char_image(char ch) const {
-        return lib_[(int)ch];
+        return lib_.at(ch);
     }
 protected:
     void set_char_image(char ch, const CharRect* img) {
-        lib_[(int)ch] = img;
+        lib_[ch] = img;
     }
     bool parse(std::string const& filename, char fill) {
         FILE* fd = fopen(filename.c_str(), "r");
@@ -117,7 +118,6 @@ protected:
         while (fgets(line, sizeof(line), fd) != NULL) {
             char * const nl = strchr(line, '\n');
             if (nl != NULL) *nl = '\0';
-            ///if (line[0] == '=' && line[1] != '\0' && (line[2] == '\0' || line[2] == ' ')) {
 			int kern = 0;
 			if (hdr_line(line, &kern)) {
                 if (rows.size() > 0) {
@@ -157,7 +157,7 @@ protected:
 		return true;
 	}
 private:
-    std::map<int, const CharRect* > lib_;
+    std::map<char, const CharRect* > lib_;
 };
 
 // -----------------------------------------------------------------
