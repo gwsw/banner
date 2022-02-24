@@ -1,52 +1,28 @@
-
-// ******** ******** ******** ******** ******** ******** ******** ********
-// ******** ******** ******** ******** ******** ******** ******** ********
-// ******** ******** ******** ******** ******** ******** ******** ********
-// ******** 
-// ********    NOTE
-// ******** 
-// ********  It must be (column,row) not (row, column).
-// ******** 
-// ********  That's consistent with (x,y) and with (width,height) order.
-// ******** 
-// ******** 
-// ******** 
-// ******** 
-// ******** 
-// ********  That is all.
-// ******** 
-// ******** 
-// ******** ******** ******** ******** ******** ******** ******** ********
-// ******** ******** ******** ******** ******** ******** ******** ********
-
-
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <string>
 #include <map>
 #include <list>
-///#include <vector>
+#include <vector>
 #include <memory>
 
 static int usage() {
     printf("usage: \n");
     return 1;
 }
-int mjn= 1;
 
 // -----------------------------------------------------------------
 class CharRect {
 public:
     explicit CharRect(int width, int height, char fill = ' ', int kern = 0)
-        : width_(width), height_(height), fill_(fill), kern_(kern) {
-        bytes_ = new char[len()];
+        : width_(width), height_(height), bytes_(len()), fill_(fill), kern_(kern) {
         clear(fill);
     }
     explicit CharRect(const CharRect& cr)
         : width_(cr.width()), height_(cr.height()), fill_(cr.fill()), kern_(cr.kern()) {
-        bytes_ = new char[len()];
-        memcpy(bytes_, cr.bytes_, len());
+        bytes_.resize(len());
+        bytes_ = cr.bytes_;
     }
     int width() const { return width_; }
     int height() const { return height_; }
@@ -61,20 +37,19 @@ public:
         bytes_[index(col,row)] = ch;
     }
     void clear(char ch) {
-//printf("clear('%c') %d x %d\n", ch, width_, height_);
         for (int row = 0; row < height_; ++row) {
             for (int col = 0; col < width_; ++col) {
                 set_at(col, row, ch);
             }
         }
     }
-    void blit(const CharRect* const from, int fcol, int frow, int tcol, int trow, int bw = -1, int bh = -1, bool transparent = false) {
+    void blit(const CharRect* const from, int fcol, int frow, int tcol, int trow, int bw = -1, int bh = -1, bool alpha = false) {
         if (bw < 0) bw = from->width();
         if (bh < 0) bh = from->height();
         for (int row = 0; row < bh; ++row) {
             for (int col = 0; col < bw; ++col) {
                 char ch = from->get_at(fcol+col, frow+row);
-                if (!transparent || ch != fill_)
+                if (!alpha || ch != fill_)
                     set_at(tcol+col, trow+row, ch);
             }
         }
@@ -89,15 +64,13 @@ public:
         }
     }
     void resize(int width, int height) {
-//printf("resize(%d,%d) -> (%d,%d)\n", width_, height_, width, height); fflush(stdout);
         if (width < width_) width = width_;
         if (height < height_) height = height_;
         ///if (width == width_ && height == height_) return;
         CharRect old_cr (*this);
-        free(bytes_);
-        bytes_ = new char[width * height];
         width_ = width;
         height_ = height;
+        bytes_.resize(len());
         clear(fill_);
         blit(&old_cr, 0, 0, 0, 0, -1, -1, true);
     }
@@ -111,7 +84,7 @@ protected:
 private:
     int width_;
     int height_;
-    char* bytes_;
+    std::vector<char> bytes_;
     char fill_;
     int kern_;
 };
@@ -132,18 +105,22 @@ protected:
     }
     bool parse(std::string const& filename, char fill) {
         FILE* fd = fopen(filename.c_str(), "r");
-        if (fd == NULL) return false;
+        if (fd == NULL) {
+            fprintf(stderr, "cannot open %s: errno %d\n", filename.c_str(), errno);
+            return false;
+        }
         std::list<std::string> rows;
         int max_len = 0;
         char curr_ch = '\0';
         char line[1024];
+        int linenum = 0;
         while (fgets(line, sizeof(line), fd) != NULL) {
+            ++linenum;
             char * const nl = strchr(line, '\n');
             if (nl != NULL) *nl = '\0';
             int kern = 0;
             if (hdr_line(line, &kern)) {
                 if (rows.size() > 0) {
-//printf("--CR (%d,%d)\n", (int)rows.size(), max_len);
                     CharRect* cr = new CharRect (max_len, rows.size(), fill, kern);
                     cr->init(rows);
                     set_char_image(curr_ch, cr);
@@ -151,11 +128,13 @@ protected:
                 }
                 max_len = 0;
                 curr_ch = line[1];
+            } else if (line[0] == ' ') {
+                std::string row = std::string(&line[1]);
+                if ((int)row.size() > max_len) max_len = row.size();
+                rows.push_back(row);
             } else {
-                int len = (int) strlen(line);
-//printf("..(%s) len %d, max %d\n", line, len, max_len);
-                if (len > max_len) max_len = len;
-                rows.push_back(std::string(line));
+                fprintf(stderr, "invalid line [%d] in %s: %s\n", linenum, filename.c_str(), line);
+                return false;
             }
         }
         fclose(fd);
