@@ -4,89 +4,110 @@
 #include <string>
 #include <map>
 #include <list>
-#include <vector>
+///#include <vector>
 #include <memory>
 
 static int usage() {
     printf("usage: \n");
     return 1;
 }
+int mjn= 1;
 
 // -----------------------------------------------------------------
 class CharRect {
 public:
-    CharRect(int width, int height, char fill = ' ', int kern = 0)
-        : width_(width), height_(height), bytes_(width*height), kern_(kern) {
+    explicit CharRect(int width, int height, char fill = ' ', int kern = 0)
+        : width_(width), height_(height), fill_(fill), kern_(kern) {
+		bytes_ = new char[len()];
         clear(fill);
     }
+	explicit CharRect(const CharRect& cr)
+		: width_(cr.width()), height_(cr.height()), fill_(cr.fill()), kern_(cr.kern()) {
+		bytes_ = new char[len()];
+		memcpy(bytes_, cr.bytes_, len());
+	}
     int width() const { return width_; }
     int height() const { return height_; }
+    char fill() const { return fill_; }
     int kern() const { return kern_; }
     char get_at(int row, int col) const {
-        if (row >= width_ || col >= height_) return ' ';
-        return bytes_[row*width_ + col];
+        if (row >= height_ || col >= width_) return fill_;
+        return bytes_[index(row,col)];
     }
     void set_at(int row, int col, char ch) {
-        if (row >= width_ || col >= height_) return;
-        bytes_[row*width_ + col] = ch;
+        if (row >= height_ || col >= width_) return;
+        bytes_[index(row,col)] = ch;
     }
     void clear(char ch) {
+printf("clear('%c') %d x %d\n", ch, width_, height_);
         for (int row = 0; row < height_; ++row) {
             for (int col = 0; col < width_; ++col) {
                 set_at(row, col, ch);
             }
         }
     }
-    void blit(std::shared_ptr<const CharRect> const from, int frow, int fcol, int trow, int tcol, int bw = -1, int bh = -1) {
+    void blit(const CharRect* const from, int frow, int fcol, int trow, int tcol, int bw = -1, int bh = -1, bool transparent = false) {
         if (bw < 0) bw = from->width();
         if (bh < 0) bh = from->height();
         for (int row = 0; row < bh; ++row) {
             for (int col = 0; col < bw; ++col) {
                 char ch = from->get_at(frow+row, fcol+col);
-                if (ch != ' ')
+                if (ch != fill_)
                     set_at(trow+row, tcol+col, ch);
             }
         }
     }
     void init(std::list<std::string>& rows) {
-        int row = 0;
-        for (auto it = rows.begin(); it != rows.end(); ++it, ++row) {
-            std::string& str = *it;
-            for (int col = 0; col < (int) it->size(); ++col) {
-                set_at(row, col, str[col]);
+        auto it = rows.begin(); 
+        for (int row = 0; row < height_; ++row, ++it) {
+            for (int col = 0; col < width_; ++col) {
+                set_at(row, col, (col >= (int) it->size()) ? fill_ : it->at(col));
             }
         }
     }
     void resize(int width, int height) {
-        int len = width * height;
-        if (len < width_ * height_) return;
-        bytes_.resize(len);
+printf("resize(%d,%d) -> (%d,%d)\n", width_, height_, width, height); fflush(stdout);
+		if (width < width_) width = width_;
+		if (height < height_) height = height_;
+		///if (width == width_ && height == height_) return;
+		CharRect old_cr (*this);
+		free(bytes_);
+		bytes_ = new char[width * height];
         width_ = width;
         height_ = height;
-        clear(' ');
+		clear(fill_);
+		blit(&old_cr, 0, 0, 0, 0, -1, -1, true);
     }
+protected:
+	int index(int row, int col) const {
+        return row*width_ + col;
+	}
+	int len() const {
+		return width_ * height_;
+	}
 private:
     int width_;
     int height_;
-    std::vector<char> bytes_;
+	char* bytes_;
+    char fill_;
     int kern_;
 };
 
 // -----------------------------------------------------------------
 class Font {
 public:
-    Font(std::string const& filename) {
-        if (!parse(filename))
+    Font(std::string const& filename, char fill = ' ') {
+        if (!parse(filename, fill))
             throw std::exception();
     }
-    std::shared_ptr<const CharRect> char_image(char ch) const {
-        return lib_[ch];
+    const CharRect* char_image(char ch) const {
+        return lib_[(int)ch];
     }
 protected:
-    void set_char_image(char ch, std::shared_ptr<const CharRect> img) {
-        lib_[ch] = img;
+    void set_char_image(char ch, const CharRect* img) {
+        lib_[(int)ch] = img;
     }
-    bool parse(std::string const& filename) {
+    bool parse(std::string const& filename, char fill) {
         FILE* fd = fopen(filename.c_str(), "r");
         if (fd == NULL) return false;
         std::list<std::string> rows;
@@ -96,9 +117,11 @@ protected:
         while (fgets(line, sizeof(line), fd) != NULL) {
             char * const nl = strchr(line, '\n');
             if (nl != NULL) *nl = '\0';
-            if (line[0] == '=' && line[1] != '\0' && line[2] == '\0') {
+            ///if (line[0] == '=' && line[1] != '\0' && (line[2] == '\0' || line[2] == ' ')) {
+			int kern = 0;
+			if (hdr_line(line, &kern)) {
                 if (rows.size() > 0) {
-					std::shared_ptr<CharRect> cr (new CharRect(rows.size(), max_len));
+                    CharRect* cr = new CharRect (rows.size(), max_len, fill, kern);
                     cr->init(rows);
                     set_char_image(curr_ch, cr);
                     rows.clear();
@@ -106,16 +129,35 @@ protected:
                 max_len = 0;
                 curr_ch = line[1];
             } else {
-                int len = strlen(line);
-                if (len > max_len) max_len = len;
+				max_len = std::max(max_len, (int) strlen(line));
                 rows.push_back(std::string(line));
             }
         }
         fclose(fd);
         return true;
     }
+	bool hdr_line(char const* line, int* kern) {
+		if (line[0] != '=' || line[1] == '\0') return false;
+		for (char const* p = &line[2]; ; ) {
+			while (*p == ' ')
+				++p;
+			if (*p == '\0')
+				break;
+			if (p[1] != '=') {
+				++p;
+			} else {
+				char *ep;
+				int num = (int) strtol(&p[2], &ep, 10);
+				switch (p[0]) {
+				case 'k': *kern = num; break;
+				}
+				p = ep;
+			}
+		}
+		return true;
+	}
 private:
-    std::map<char,std::shared_ptr<const CharRect> > lib_;
+    std::map<int, const CharRect* > lib_;
 };
 
 // -----------------------------------------------------------------
@@ -124,22 +166,25 @@ public:
     Banner(std::string const& str, Font const& font) : img_(0,0) {
         build(str, font);
     }
-    void print(int offset, int sc_width, int sc_height) const {
-        for (int row = 0; row < sc_height; ++row) {
+    void print(int offset, int sc_width, int sc_height, void (*putc)(char ch)) const {
+//        for (char const* p = "\33[H\33[J"; *p; ++p)
+//            (*putc)(*p);
+        int rows = std::min(img_.height(), sc_height-1);
+        for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < sc_width; ++col) {
-                ::putchar(img_.get_at(row, col+offset));
+                (*putc)(img_.get_at(row, col+offset));
             }
-            ::putchar('\n');
+            (*putc)('\n');
         }
     }
 protected:
     void build(std::string const& str, Font const& font) {
         for (size_t i = 0; i < str.size(); ++i) {
             char ch = str[i];
-            std::shared_ptr<const CharRect> ch_img = font.char_image(ch);
-            int w = img_.width();
+            CharRect const* ch_img = font.char_image(ch);
+            int redge = img_.width();
             img_.resize(img_.width() + ch_img->width(), std::max(img_.height(), ch_img->height()));
-            img_.blit(ch_img, 0, 0, w, 0);
+            img_.blit(ch_img, 0, 0, redge, 0);
         }
     }
 private:
@@ -148,16 +193,19 @@ private:
 
 // -----------------------------------------------------------------
 
-static void run_banner(std::string const& str, std::string const& font_file, int delay_ms, int offset_incr, int sc_width, int sc_height, int space) {
-    struct timespec delay_tv;
-    delay_tv.tv_sec = 0;
-    delay_tv.tv_nsec = delay_ms * 1000000;
+static void putch(char ch) {
+    putchar(ch);
+}
+
+static void run_banner(std::string const& str, std::string const& font_file, int delay_ms, int offset_incr, int sc_width, int sc_height, int space, char fill) {
+    struct timespec delay_time;
+    delay_time.tv_sec = delay_ms / 1000;
+    delay_time.tv_nsec = (delay_ms % 1000) * 1000000;
     Font font (font_file);
     Banner banner(str, font);
-    ////std::string space_str; for (int i = 0; i < space; ++i) space_str += " ";
     for (int offset = 0;; offset += offset_incr) {
-        banner.print(offset, sc_width, sc_height);
-        nanosleep(&delay_tv, NULL);
+        banner.print(offset, sc_width, sc_height, putch);
+        nanosleep(&delay_time, NULL);
     }
 }
 
@@ -167,15 +215,19 @@ int main(int argc, char** argv) {
     int delay = 100;
     int offset_incr = 1;
     int space = 3;
+    int fill = ' ';
     std::string font_file = "?";
     int ch;
-    while ((ch = getopt(argc, argv, "d:f:h:i:s:w:")) != -1) {
+    while ((ch = getopt(argc, argv, "d:f:F:h:i:s:w:")) != -1) {
         switch (ch) {
         case 'd':
             delay = atoi(optarg);
             break;
         case 'f':
             font_file = optarg;
+            break;
+        case 'F':
+            fill = optarg[0];
             break;
         case 'h':
             sc_height = atoi(optarg);
@@ -198,6 +250,6 @@ int main(int argc, char** argv) {
         if (str != "") str += " ";
         str += argv[optind];
     }
-    run_banner(str, font_file, delay, offset_incr, sc_width, sc_height, space);
+    run_banner(str, font_file, delay, offset_incr, sc_width, sc_height, space, fill);
     return 0;
 }
