@@ -2,6 +2,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <termios.h>
+#include <sys/select.h>
 #include <sys/errno.h>
 #include <string>
 #include <map>
@@ -22,12 +24,12 @@ static int usage() {
 class CharRect {
 public:
     explicit CharRect(int width, int height, char fill = ' ', int kern = 0)
-        : width_(width), height_(height), bytes_(len()), fill_(fill), kern_(kern) {
+        : width_(width), height_(height), bytes_(size()), fill_(fill), kern_(kern) {
         clear();
     }
     explicit CharRect(const CharRect& cr)
         : width_(cr.width()), height_(cr.height()), fill_(cr.fill()), kern_(cr.kern()) {
-        bytes_.resize(len());
+        bytes_.resize(size());
         bytes_ = cr.bytes_;
     }
     int width() const { return width_; }
@@ -78,7 +80,7 @@ public:
         CharRect old_cr (*this);
         width_ = width;
         height_ = height;
-        bytes_.resize(len());
+        bytes_.resize(size());
         clear();
         blit(&old_cr, 0, 0, 0, 0);
     }
@@ -86,7 +88,7 @@ protected:
     int index(int col, int row) const {
         return row*width_ + col;
     }
-    int len() const {
+    int size() const {
         return width_ * height_;
     }
 private:
@@ -215,7 +217,7 @@ private:
 // -----------------------------------------------------------------
 class Params {
 public:
-    Params(int argc, char** argv) {
+    Params(int argc, char* const argv[]) {
         sc_width = atoi(getenv("COLUMNS"));
         sc_height = atoi(getenv("LINES"));
         delay_ms = 50;
@@ -273,6 +275,20 @@ public:
 class Runner {
 public:
     Runner(Params const& params) : params_(params) {}
+    void run() {
+        rawmode(true);
+        Font font (params_.font_file);
+        Banner banner(params_.message, font);
+        put_color(params_.color);
+        for (int offset = 0; !quit; offset += params_.offset_incr) {
+            if (key_pressed() == 'q') break;
+            banner.print(offset, params_.sc_width, params_.sc_height, putch);
+            sleep_ms(params_.delay_ms);
+        }
+        put_color("");
+        printf("%s", sc_clear);
+        rawmode(false);
+    }
     void put_color(std::string const& color) {
         if (color.size() == 0) {
             printf("\33[m");
@@ -306,21 +322,33 @@ public:
         default:  return 0;
         }
     }
-    void run() {
-        struct timespec delay_time;
-        if (params_.delay_ms >= 0) {
-            delay_time.tv_sec = params_.delay_ms / 1000;
-            delay_time.tv_nsec = (params_.delay_ms % 1000) * 1000000;
+    static void sleep_ms(int ms) {
+        struct timespec tv;
+        tv.tv_sec = ms / 1000;
+        tv.tv_nsec = (ms % 1000) * 1000000;
+        nanosleep(&tv, NULL);
+    }
+    static void rawmode(bool raw) {
+        struct termios term;
+        static struct termios save_term;
+        if (raw) {
+            tcgetattr(0, &term);
+			save_term = term;
+            term.c_lflag &= ~ICANON;
+		} else {
+            term = save_term;
         }
-        Font font (params_.font_file);
-        Banner banner(params_.message, font);
-        put_color(params_.color);
-        for (int offset = 0; !quit; offset += params_.offset_incr) {
-            banner.print(offset, params_.sc_width, params_.sc_height, putch);
-            nanosleep(&delay_time, NULL);
-        }
-        put_color("");
-        printf("%s", sc_clear);
+        tcsetattr(0, TCSADRAIN, &term);
+    }
+    static char key_pressed() {
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(0, &fds);
+        struct timeval tv;
+        tv.tv_sec = tv.tv_usec = 0;
+        int r = select(1, &fds, NULL, NULL, &tv);
+        if (r > 0) return getchar();
+        return '\0';
     }
     static void putch(char ch) {
         putchar(ch);
@@ -335,10 +363,15 @@ static void intr(int sig) {
     quit = 1;
 }
 
-int main(int argc, char** argv) {
-    Params params (argc, argv);
+int main(int argc, char* const argv[]) {
     signal(SIGINT, intr);
-    Runner runner(params);
-    runner.run();
+    try {
+        Params params (argc, argv);
+        Runner runner(params);
+        runner.run();
+    } catch (std::runtime_error& e) {
+        printf("ERROR: %s\n", e.what());
+        return 1;
+    }
     return 0;
 }
