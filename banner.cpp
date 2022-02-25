@@ -23,7 +23,7 @@ class CharRect {
 public:
     explicit CharRect(int width, int height, char fill = ' ', int kern = 0)
         : width_(width), height_(height), bytes_(len()), fill_(fill), kern_(kern) {
-        clear(fill);
+        clear();
     }
     explicit CharRect(const CharRect& cr)
         : width_(cr.width()), height_(cr.height()), fill_(cr.fill()), kern_(cr.kern()) {
@@ -48,6 +48,9 @@ public:
                 set_at(col, row, ch);
             }
         }
+    }
+    void clear() {
+        clear(fill_);
     }
     void blit(const CharRect* const from, int fcol, int frow, int tcol, int trow, int bw = -1, int bh = -1, bool alpha = false) {
         if (bw < 0) bw = from->width();
@@ -76,7 +79,7 @@ public:
         width_ = width;
         height_ = height;
         bytes_.resize(len());
-        clear(fill_);
+        clear();
         blit(&old_cr, 0, 0, 0, 0);
     }
 protected:
@@ -158,8 +161,10 @@ protected:
         return true;
     }
     bool hdr_line(char const* line, int* kern) {
-        if (line[0] != '=' || line[1] == '\0') return false;
-        for (char const* p = &line[2]; ; ) { while (*p == ' ')
+        if (line[0] != '=' || line[1] == '\0')
+            return false;
+        for (char const* p = &line[2]; ; ) {
+            while (*p == ' ')
                 ++p;
             if (*p == '\0')
                 break;
@@ -198,7 +203,7 @@ public:
         int rows = std::min(img_.height(), sc_height-1);
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < sc_width; ++col) {
-                    (*putc)(img_.get_at(col+offset, row));
+                (*putc)(img_.get_at(col+offset, row));
             }
             (*putc)('\n');
         }
@@ -213,7 +218,7 @@ public:
     Params(int argc, char** argv) {
         sc_width = atoi(getenv("COLUMNS"));
         sc_height = atoi(getenv("LINES"));
-        delay_ms = -1;
+        delay_ms = 50;
         offset_incr = 1;
         fill = ' ';
         color = "";
@@ -280,7 +285,7 @@ public:
                 printf("\33[%dm", color_bg+10);
         }
     }
-	int parse_color(char ch) {
+    int parse_color(char ch) {
         switch (ch) {
         case 'k': return 30;
         case 'r': return 31;
@@ -312,12 +317,10 @@ public:
         put_color(params_.color);
         for (int offset = 0; !quit; offset += params_.offset_incr) {
             banner.print(offset, params_.sc_width, params_.sc_height, putch);
-            if (params_.delay_ms < 0) break;
             nanosleep(&delay_time, NULL);
         }
         put_color("");
-        if (params_.delay_ms >= 0)
-            printf("%s", sc_clear);
+        printf("%s", sc_clear);
     }
     static void putch(char ch) {
         putchar(ch);

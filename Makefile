@@ -1,4 +1,4 @@
-CFLAGS = -Wall -std=c++11 -g 
+CFLAGS = -Wall -std=c++11 -O2 -g
 
 .cpp.o:
 	g++ $(CFLAGS) -c $<
