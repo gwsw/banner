@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/errno.h>
 #include <string>
 #include <map>
 #include <list>
@@ -13,7 +14,8 @@ static char const* sc_clear = "\33[H\33[2J";
 static int quit = 0;
 
 static int usage() {
-    throw std::runtime_error("usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message");
+    fprintf(stderr, "usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message\n");
+    throw std::runtime_error("usage");
 }
 
 // -----------------------------------------------------------------
@@ -113,9 +115,13 @@ protected:
         lib_[ch] = img;
     }
     bool parse_font_file(std::string const& filename, char fill) {
+        if (filename.size() == 0) {
+            fprintf(stderr, "no font file specified\n");
+            return false;
+        }
         FILE* fd = fopen(filename.c_str(), "r");
         if (fd == NULL) {
-            fprintf(stderr, "cannot open %s: errno %d\n", filename.c_str(), errno);
+            fprintf(stderr, "cannot open font file %s: %s\n", filename.c_str(), strerror(errno));
             return false;
         }
         std::list<std::string> rows;
@@ -211,7 +217,7 @@ public:
         offset_incr = 1;
         fill = ' ';
         color = "";
-        font_file = "?";
+        font_file = "";
         int ch;
         while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:x:y:")) != -1) {
             switch (ch) {
@@ -310,7 +316,8 @@ public:
             nanosleep(&delay_time, NULL);
         }
         put_color("");
-        printf("%s", sc_clear);
+        if (params_.delay_ms >= 0)
+            printf("%s", sc_clear);
     }
     static void putch(char ch) {
         putchar(ch);
