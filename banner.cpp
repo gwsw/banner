@@ -132,6 +132,7 @@ protected:
         std::list<std::string> rows;
         int max_len = 0;
         char curr_ch = '\0';
+        char curr_kern = 0;
         char line[1024];
         int linenum = 0;
         while (fgets(line, sizeof(line), fd) != NULL) {
@@ -139,49 +140,62 @@ protected:
             char * const nl = strchr(line, '\n');
             if (nl != NULL) *nl = '\0';
             int kern = 0;
-            if (hdr_line(line, &kern)) {
+            char headch;
+            if ((headch = hdr_line(line, filename, linenum, &kern)) != '\0') {
                 if (rows.size() > 0) {
-                    CharRect* cr = new CharRect (max_len, rows.size(), fill, kern);
+                    CharRect* cr = new CharRect (max_len, rows.size(), fill, curr_kern);
                     cr->init(rows);
                     set_char_image(curr_ch, cr);
                     rows.clear();
                 }
+                curr_ch = headch;
+                curr_kern = kern;
                 max_len = 0;
-                curr_ch = line[1];
             } else if (line[0] == ' ') {
-                for (char* p = line; *p != '\0'; ++p)
-                    if (*p == '_') *p = ' ';
                 std::string row = std::string(&line[1]);
-                if ((int)row.size() > max_len) max_len = row.size();
+                int len = (int) row.size();
+                if (row[len-1] == '$')
+                    row[len-1] = ' ';
+                if (len > max_len) max_len = len;
                 rows.push_back(row);
             } else {
-                fprintf(stderr, "invalid line [%d] in %s: %s\n", linenum, filename.c_str(), line);
+                fprintf(stderr, "%s:%d: invalid line\n", filename.c_str(), linenum);
                 return false;
             }
         }
         fclose(fd);
         return true;
     }
-    bool hdr_line(char const* line, int* kern) {
-        if (line[0] != '=' || line[1] == '\0')
-            return false;
-        for (char const* p = &line[2]; ; ) {
+    char hdr_line(char const* line, std::string const& filename, int linenum, int* kern) {
+        char const* p = line;
+        if (*p++ != '=')
+            return '\0';
+        char headch = *p++;
+        if (headch == '\0') {
+            fprintf(stderr, "%s:%d: ignore lone '=' line\n", filename.c_str(), linenum);
+            return '\0';
+        }
+        for (;;) {
             while (*p == ' ')
                 ++p;
             if (*p == '\0')
                 break;
-            if (p[1] != '=') {
-                ++p;
-            } else {
-                char *ep;
-                int num = (int) strtol(&p[2], &ep, 10);
-                switch (p[0]) {
-                case 'k': *kern = num; break;
-                }
-                p = ep;
+            char key = *p++;
+            if (*p++ != '=') {
+                fprintf(stderr, "%s:%d: ignore incomplete %c key\n", filename.c_str(), linenum, key);
+                return '\0';
+            }
+            char *ep;
+            int num = (int) strtol(p, &ep, 10);
+            p = ep;
+            switch (key) {
+            case 'k': *kern = num; break;
+            default:
+                fprintf(stderr, "%s:%d: ignore unknown %c key\n", filename.c_str(), linenum, key);
+                return '\0';
             }
         }
-        return true;
+        return headch;
     }
 private:
     std::map<char, const CharRect* > lib_;
@@ -293,12 +307,9 @@ public:
         if (color.size() == 0) {
             printf("\33[m");
         } else {
-            int color_fg = parse_color(color[0]);
-            int color_bg = (color.size() <= 1) ? -1 : parse_color(color[1]);
-            if (color_fg > 0)
-                printf("\33[%dm", color_fg);
-            if (color_bg > 0)
-                printf("\33[%dm", color_bg+10);
+            printf("\33[%dm", parse_color(color[0])); // fg
+            if (color.size() >= 1)
+                printf("\33[%dm", parse_color(color[1])+10); // bg
         }
     }
     int parse_color(char ch) {
@@ -332,7 +343,8 @@ public:
         struct termios term;
         static struct termios save_term;
         if (raw) {
-            tcgetattr(0, &term);
+            if (tcgetattr(0, &term) < 0)
+                throw std::runtime_error("cannot get tty attributes");
 			save_term = term;
             term.c_lflag &= ~ICANON;
 		} else {
