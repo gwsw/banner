@@ -12,7 +12,7 @@
 #include <memory>
 #include <stdexcept>
 
-static char const* sc_clear = "\33[H\33[2J";
+static char const* sc_clear = "\33[H\33[2J"; // FIXME should come from terminfo
 static int quit = 0;
 
 static int usage() {
@@ -166,13 +166,14 @@ protected:
         fclose(fd);
         return true;
     }
+    // header line is "=CHAR" followed by zero or more "KEY=NUMBER"
     char hdr_line(char const* line, std::string const& filename, int linenum, int* kern) {
         char const* p = line;
         if (*p++ != '=')
             return '\0';
         char headch = *p++;
         if (headch == '\0') {
-            fprintf(stderr, "%s:%d: ignore lone '=' line\n", filename.c_str(), linenum);
+            fprintf(stderr, "%s:%d: lone '=' line\n", filename.c_str(), linenum);
             return '\0';
         }
         for (;;) {
@@ -182,7 +183,7 @@ protected:
                 break;
             char key = *p++;
             if (*p++ != '=') {
-                fprintf(stderr, "%s:%d: ignore incomplete %c key\n", filename.c_str(), linenum, key);
+                fprintf(stderr, "%s:%d: incomplete %c key\n", filename.c_str(), linenum, key);
                 return '\0';
             }
             char *ep;
@@ -191,7 +192,7 @@ protected:
             switch (key) {
             case 'k': *kern = num; break;
             default:
-                fprintf(stderr, "%s:%d: ignore unknown %c key\n", filename.c_str(), linenum, key);
+                fprintf(stderr, "%s:%d: unknown %c key\n", filename.c_str(), linenum, key);
                 return '\0';
             }
         }
@@ -205,6 +206,7 @@ private:
 class Banner {
 public:
     Banner(std::string const& message, Font const& font) : img_(0,0) {
+        // Build banner image from char images.
         for (size_t i = 0; i < message.size(); ++i) {
             char ch = message[i];
             CharRect const* ch_img = font.char_image(ch);
@@ -242,29 +244,14 @@ public:
         int ch;
         while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:x:y:")) != -1) {
             switch (ch) {
-            case 'c':
-                color = optarg;
-                break;
-            case 'd':
-                delay_ms = atoi(optarg);
-                break;
-            case 'f':
-                font_file = optarg;
-                break;
-            case 'F':
-                fill = optarg[0];
-                break;
-            case 'h':
-                sc_height = atoi(optarg);
-                break;
-            case 'i':
-                offset_incr = atoi(optarg);
-                break;
-            case 'w':
-                sc_width = atoi(optarg);
-                break;
-            default:
-                usage();
+            case 'c': color = optarg; break;
+            case 'd': delay_ms = atoi(optarg); break;
+            case 'f': font_file = optarg; break;
+            case 'F': fill = optarg[0]; break;
+            case 'h': sc_height = atoi(optarg); break;
+            case 'i': offset_incr = atoi(optarg); break;
+            case 'w': sc_width = atoi(optarg); break;
+            default: usage();
             }
         }
         if (optind == argc)
