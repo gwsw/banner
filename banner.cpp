@@ -119,6 +119,11 @@ protected:
     void set_char_image(char ch, const CharRect* img) {
         lib_[ch] = img;
     }
+    // font_file: (hdr_line char_line+)* fin_line
+    // hdr_line:  '=' CHAR (CHAR '=' NUMBER)* '\n'
+    // char_line: ' ' CHAR* '$'? '\n'
+    // fin_line:  '=' '=' '\n'
+    //   Initial ' ' and final '$' in char_line are ignored.
     bool parse_font_file(std::string const& filename, char fill) {
         if (filename.size() == 0) {
             fprintf(stderr, "no font file specified\n");
@@ -155,7 +160,7 @@ protected:
                 std::string row = std::string(&line[1]);
                 int len = (int) row.size();
                 if (row[len-1] == '$')
-                    row[len-1] = ' ';
+                    row.pop_back();
                 if (len > max_len) max_len = len;
                 rows.push_back(row);
             } else {
@@ -369,7 +374,7 @@ int main(int argc, char* const argv[]) {
         Runner runner(params);
         runner.run();
     } catch (std::runtime_error& e) {
-        printf("ERROR: %s\n", e.what());
+        fprintf(stderr, "ERROR: %s\n", e.what());
         return 1;
     }
     return 0;
