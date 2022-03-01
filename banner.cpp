@@ -226,7 +226,8 @@ public:
         int rows = std::min(img_.height(), sc_height-1);
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < sc_width; ++col) {
-                (*putc)(img_.get_at(col+offset, row));
+                int ocol = col + offset;
+                (*putc)((ocol < 0) ? ' ' : img_.get_at(ocol, row));
             }
             (*putc)('\n');
         }
@@ -271,7 +272,7 @@ public:
     int sc_height;
     int delay_ms;
     int offset_incr;
-    int fill;
+    char fill;
     std::string color;
     std::string font_file;
     std::string message;
@@ -286,7 +287,7 @@ public:
         Font font (params_.font_file);
         Banner banner(params_.message, font);
         put_color(params_.color);
-        for (int offset = 0; !quit; offset += params_.offset_incr) {
+        for (int offset = -params_.sc_width; !quit; offset += params_.offset_incr) {
             if (key_pressed() == 'q') break;
             banner.print(offset, params_.sc_width, params_.sc_height, putch);
             sleep_ms(params_.delay_ms);
