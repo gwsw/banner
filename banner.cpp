@@ -110,9 +110,9 @@ public:
         try {
             return lib_.at(ch);
         } catch (...) {
-            ///return lib_.at('?');
             fprintf(stderr, "'%c' not in font\n", ch);
-            throw;
+            return lib_.at('?');
+            ///throw;
         }
     }
 protected:
