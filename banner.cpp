@@ -283,14 +283,25 @@ class Runner {
 public:
     Runner(Params const& params) : params_(params) {}
     void run() {
+        const double speed_incr = 1.25;
+        int delay_ms = params_.delay_ms;
+        bool paused = false;
         rawmode(true);
         Font font (params_.font_file);
         Banner banner(params_.message, font);
         put_color(params_.color);
-        for (int offset = -params_.sc_width; !quit; offset += params_.offset_incr) {
-            if (key_pressed() == 'q') break;
-            banner.print(offset, params_.sc_width, params_.sc_height, putch);
-            sleep_ms(params_.delay_ms);
+        for (int offset = -params_.sc_width; !quit; ) {
+            switch (key_pressed()) {
+            case 'q': quit = true; break;
+            case 'p': paused = !paused; break;
+            case '+': delay_ms /= speed_incr; break;
+            case '-': delay_ms *= speed_incr; break;
+            }
+            if (!paused) {
+                banner.print(offset, params_.sc_width, params_.sc_height, putch);
+                offset += params_.offset_incr;
+            }
+            sleep_ms(delay_ms);
         }
         put_color("");
         printf("%s", sc_clear);
@@ -338,9 +349,9 @@ public:
         if (raw) {
             if (tcgetattr(0, &term) < 0)
                 throw std::runtime_error("cannot get tty attributes");
-			save_term = term;
+            save_term = term;
             term.c_lflag &= ~ICANON;
-		} else {
+        } else {
             term = save_term;
         }
         tcsetattr(0, TCSADRAIN, &term);
