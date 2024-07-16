@@ -13,6 +13,7 @@
 #include <stdexcept>
 
 extern char plain_font[];
+const char plain_font_name[] = "plain";
 
 static char const* sc_clear = "\33[H\33[2J"; // FIXME should come from terminfo
 static int quit = 0;
@@ -268,11 +269,11 @@ public:
     Params(int argc, char* const argv[]) {
         sc_width = atoi(getenv("COLUMNS"));
         sc_height = atoi(getenv("LINES"));
-        delay_ms = 50;
+        delay_ms = 40;
         offset_incr = 1;
         fill = ' ';
         color = "";
-        font_file = "";
+        font_file = plain_font_name;
         int ch;
         while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:x:y:")) != -1) {
             switch (ch) {
@@ -406,10 +407,14 @@ static void intr(int sig) {
     quit = 1;
 }
 
+static void init_fonts() {
+    fontmap[plain_font_name] = plain_font;
+}
+
 int main(int argc, char* const argv[]) {
     signal(SIGINT, intr);
-    fontmap["plain"] = plain_font;
     try {
+		init_fonts();
         Params params (argc, argv);
         Runner runner(params);
         runner.run();
