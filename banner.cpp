@@ -269,7 +269,7 @@ public:
     Params(int argc, char* const argv[]) {
         sc_width = atoi(getenv("COLUMNS"));
         sc_height = atoi(getenv("LINES"));
-        delay_ms = 40;
+        delay_ms = 35;
         offset_incr = 1;
         fill = ' ';
         color = "";
