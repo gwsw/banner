@@ -39,15 +39,13 @@ static char const* sc_clear = "\33[H\33[2J"; // FIXME should come from terminfo
 static int quit = 0;
 static std::map<const std::string, const char*> fontmap;
 
-static int usage() {
-    ////fprintf(stderr, "usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message\n");
+static void usage() {
     fprintf(stderr, "%s", help_text);
-    ///throw std::runtime_error("usage");
-    return 0;
 }
 
 static void help() {
-    printf("%s%s", sc_clear, help_text);
+    fprintf(stderr, "%s", sc_clear);
+    usage();
 }
 
 // -----------------------------------------------------------------
