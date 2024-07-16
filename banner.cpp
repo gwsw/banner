@@ -32,12 +32,21 @@ static const char help_text[] =
     "        h   Display help\n"
     ;
 
-extern char plain_font[];
 const char plain_font_name[] = "plain";
+extern char plain_font[];
+extern int plain_font_len;
 
 static char const* sc_clear = "\33[H\33[2J"; // FIXME should come from terminfo
 static int quit = 0;
-static std::map<const std::string, const char*> fontmap;
+
+struct FontData {
+    FontData(const char* data, size_t len) : data(data), len(len) {}
+    FontData() : data(NULL), len(0) {}
+    const char* data;
+    size_t len;
+};
+static std::map<const std::string, FontData> fontmap;
+
 
 static void usage() {
     fprintf(stderr, "%s", help_text);
@@ -58,8 +67,7 @@ public:
     explicit CharRect(const CharRect& cr)
         : width_(cr.width()), height_(cr.height()), fill_(cr.fill()), kern_(cr.kern()) {
         bytes_.resize(size());
-        bytes_ = cr.bytes_;
-    }
+        bytes_ = cr.bytes_; }
     int width() const { return width_; }
     int height() const { return height_; }
     char fill() const { return fill_; }
@@ -149,15 +157,14 @@ protected:
         lib_[ch] = img;
     }
     bool builtin_font(std::string const& filename, char fill) {
-        const char* fontdata;
+        FontData fontdata;
         try {
             fontdata = fontmap[filename];
         } catch (...) {
-            fontdata = NULL;
         }
-        if (fontdata == NULL)
+        if (fontdata.data == NULL)
             return false;
-        FILE* fd = fmemopen((void*)fontdata, strlen(fontdata), "r");
+        FILE* fd = fmemopen((void*)fontdata.data, fontdata.len, "r");
         if (fd == NULL) {
             fprintf(stderr, "internal error: cannot memopen font data\n");
             return false;
@@ -192,7 +199,10 @@ protected:
         char curr_kern = 0;
         char line[1024];
         int linenum = 0;
-        while (fgets(line, sizeof(line), fd) != NULL) {
+        ///while (fgets(line, sizeof(line), fd) != NULL) {
+        for (;;) {
+            const char *fg = fgets(line, sizeof(line), fd);
+            if (fg == NULL) break;
             ++linenum;
             char * const nl = strchr(line, '\n');
             if (nl != NULL) *nl = '\0';
@@ -403,7 +413,7 @@ public:
             if (tcgetattr(0, &term) < 0)
                 throw std::runtime_error("cannot get tty attributes");
             save_term = term;
-            term.c_lflag &= ~ICANON;
+            term.c_lflag &= ~(ICANON|ECHO);
         } else {
             term = save_term;
         }
@@ -434,7 +444,7 @@ static void intr(int sig) {
 }
 
 static void init_fonts() {
-    fontmap[plain_font_name] = plain_font;
+    fontmap[plain_font_name] = FontData(plain_font, plain_font_len);
 }
 
 int main(int argc, char* const argv[]) {
