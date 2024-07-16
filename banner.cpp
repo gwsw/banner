@@ -12,8 +12,11 @@
 #include <memory>
 #include <stdexcept>
 
+extern char plain_font[];
+
 static char const* sc_clear = "\33[H\33[2J"; // FIXME should come from terminfo
 static int quit = 0;
+static std::map<const std::string, const char*> fontmap;
 
 static int usage() {
     fprintf(stderr, "usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message\n");
@@ -103,7 +106,7 @@ private:
 class Font {
 public:
     Font(std::string const& filename, char fill = ' ') {
-        if (!parse_font_file(filename, fill))
+        if (!builtin_font(filename, fill) && !parse_font_file(filename, fill))
             throw std::runtime_error("cannot parse font file");
     }
     const CharRect* char_image(char ch) const {
@@ -111,13 +114,32 @@ public:
             return lib_.at(ch);
         } catch (...) {
             fprintf(stderr, "'%c' not in font\n", ch);
-            return lib_.at('?');
+            return lib_.at(' ');
             ///throw;
         }
     }
 protected:
+
     void set_char_image(char ch, const CharRect* img) {
         lib_[ch] = img;
+    }
+    bool builtin_font(std::string const& filename, char fill) {
+        const char* fontdata;
+        try {
+            fontdata = fontmap[filename];
+        } catch (...) {
+            fontdata = NULL;
+        }
+        if (fontdata == NULL)
+            return false;
+        FILE* fd = fmemopen((void*)fontdata, strlen(fontdata), "r");
+        if (fd == NULL) {
+            fprintf(stderr, "internal error: cannot memopen font data\n");
+            return false;
+        }
+        bool ok = parse_font_data(fd, fill, filename);
+        fclose(fd);
+        return ok;
     }
     // font_file: (hdr_line char_line+)* fin_line
     // hdr_line:  '=' CHAR (CHAR '=' NUMBER)* '\n'
@@ -134,6 +156,11 @@ protected:
             fprintf(stderr, "cannot open font file %s: %s\n", filename.c_str(), strerror(errno));
             return false;
         }
+        bool ok = parse_font_data(fd, fill, filename);
+        fclose(fd);
+        return ok;
+    }
+    bool parse_font_data(FILE* fd, char fill, const std::string& filename) {
         std::list<std::string> rows;
         int max_len = 0;
         char curr_ch = '\0';
@@ -168,7 +195,6 @@ protected:
                 return false;
             }
         }
-        fclose(fd);
         return true;
     }
     // header line is "=CHAR" followed by zero or more "KEY=NUMBER"
@@ -381,6 +407,7 @@ static void intr(int sig) {
 
 int main(int argc, char* const argv[]) {
     signal(SIGINT, intr);
+    fontmap["plain"] = plain_font;
     try {
         Params params (argc, argv);
         Runner runner(params);
