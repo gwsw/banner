@@ -300,7 +300,6 @@ public:
         fill = ' ';
         color = "";
         font_file = plain_font_name;
-        run_ok = true;
         int ch;
         while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:?")) != -1) {
             switch (ch) {
@@ -311,10 +310,11 @@ public:
             case 'h': sc_height = atoi(optarg); break;
             case 'i': offset_incr = atoi(optarg); break;
             case 'w': sc_width = atoi(optarg); break;
-            default: run_ok = false; usage();
+            case '?': usage(); throw std::runtime_error("help");
+            default: usage(); throw std::runtime_error("invalid option");
             }
         }
-        if (run_ok && optind == argc)
+        if (optind == argc)
             usage();
         for (; optind < argc; ++optind) {
             if (message != "") message += " ";
@@ -330,7 +330,6 @@ public:
     std::string color;
     std::string font_file;
     std::string message;
-    bool run_ok;
 };
 
 // -----------------------------------------------------------------
@@ -445,13 +444,14 @@ int main(int argc, char* const argv[]) {
     try {
         init_fonts();
         Params params (argc, argv);
-        if (params.run_ok) {
-            Runner runner(params);
-            runner.run();
-        }
+        Runner runner(params);
+        runner.run();
     } catch (std::runtime_error& e) {
-        fprintf(stderr, "ERROR: %s\n", e.what());
-        return 1;
+        const char* what = e.what();
+        if (strcmp(what, "help") != 0) {
+            fprintf(stderr, "ERROR: %s\n", what);
+            return 1;
+        }
     }
     return 0;
 }
