@@ -12,6 +12,26 @@
 #include <memory>
 #include <stdexcept>
 
+static const char help_text[] =
+    "usage: banner [options] \"message\"\n"
+    "       Options:\n"
+    "       -c CH    CH is r=red, g=green, b=blue, y=yellow, m=magenta, c=cyan, w=white, k=black\n"
+    "                uppercase means brighter\n"
+    "       -d #     delay between redraw (milliseconds)\n"
+    "       -f NAME  font name or file; default is \"plain\"\n"
+    "       -F CH    background fill; default is space\n"
+    "       -i #     # chars to step each redraw; default is 1\n"
+    "       -h #     screen height; default $LINES\n"
+    "       -w #     screen width; default $COLUMNS\n"
+    "\n"
+    "       Commands while running:\n"
+    "        q   Quit\n"
+    "        +   Run faster\n"
+    "        -   Run slower\n"
+    "        p   Pause\n"
+    "        h   Display help\n"
+    ;
+
 extern char plain_font[];
 const char plain_font_name[] = "plain";
 
@@ -20,8 +40,14 @@ static int quit = 0;
 static std::map<const std::string, const char*> fontmap;
 
 static int usage() {
-    fprintf(stderr, "usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message\n");
-    throw std::runtime_error("usage");
+    ////fprintf(stderr, "usage: banner [-c color] [-d delay-ms] [-f font-file] [-F fill-char] [-h screen-height] [-i incr-chars] [-w screen-width] message\n");
+    fprintf(stderr, "%s", help_text);
+    ///throw std::runtime_error("usage");
+    return 0;
+}
+
+static void help() {
+    printf("%s%s", sc_clear, help_text);
 }
 
 // -----------------------------------------------------------------
@@ -274,8 +300,9 @@ public:
         fill = ' ';
         color = "";
         font_file = plain_font_name;
+        run_ok = true;
         int ch;
-        while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:x:y:")) != -1) {
+        while ((ch = getopt(argc, argv, "c:d:f:F:h:i:w:?")) != -1) {
             switch (ch) {
             case 'c': color = optarg; break;
             case 'd': delay_ms = atoi(optarg); break;
@@ -284,10 +311,10 @@ public:
             case 'h': sc_height = atoi(optarg); break;
             case 'i': offset_incr = atoi(optarg); break;
             case 'w': sc_width = atoi(optarg); break;
-            default: usage();
+            default: run_ok = false; usage();
             }
         }
-        if (optind == argc)
+        if (run_ok && optind == argc)
             usage();
         for (; optind < argc; ++optind) {
             if (message != "") message += " ";
@@ -303,6 +330,7 @@ public:
     std::string color;
     std::string font_file;
     std::string message;
+    bool run_ok;
 };
 
 // -----------------------------------------------------------------
@@ -320,6 +348,7 @@ public:
         for (int offset = -params_.sc_width; !quit; ) {
             switch (key_pressed()) {
             case 'q': quit = true; break;
+            case 'h': case '?': help(); (void) getchar(); break;
             case 'p': paused = !paused; break;
             case '+': delay_ms /= speed_incr; break;
             case '-': delay_ms *= speed_incr; break;
@@ -414,10 +443,12 @@ static void init_fonts() {
 int main(int argc, char* const argv[]) {
     signal(SIGINT, intr);
     try {
-		init_fonts();
+        init_fonts();
         Params params (argc, argv);
-        Runner runner(params);
-        runner.run();
+        if (params.run_ok) {
+            Runner runner(params);
+            runner.run();
+        }
     } catch (std::runtime_error& e) {
         fprintf(stderr, "ERROR: %s\n", e.what());
         return 1;
